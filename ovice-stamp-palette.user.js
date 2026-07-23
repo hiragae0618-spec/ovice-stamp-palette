@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         リベシティ ovice スタンプパレット
 // @namespace    https://libecity.com/
-// @version      1.5.0
+// @version      1.6.0
 // @description  oviceでスタンプをたくさん使えるパレット。ドラッグで移動、サイズ・効果音の選択、スタンプの追加/削除に対応。
 // @match        https://app.ovice.com/*
 // @match        https://*.ovice.in/*
@@ -14,7 +14,7 @@
 
   // ページのwindow(ovice API)に触るため、pageコンテキストへ本体を注入する
   const source = function () {
-    const PALETTE_VERSION = 'v12';
+    const PALETTE_VERSION = 'v13';
     const STORE_KEY = 'libecity-stamp-palette';
 
     // ── デフォルトのスタンプ（画像URLは公開されているものを利用） ──
@@ -71,7 +71,7 @@
 
     // ── 設定はlocalStorage、スタンプ本体は容量の大きいIndexedDBに保存 ──
     const state = Object.assign(
-      { stamps: null, size: 'S', sound: '', open: true, x: 20, y: 60, editing: false },
+      { stamps: null, size: 'S', sound: '', open: true, x: 20, y: 60, toggleX: null, toggleY: null, editing: false },
       loadSettings()
     );
 
@@ -81,13 +81,15 @@
     function loadSettings() {
       try {
         const s = JSON.parse(localStorage.getItem(STORE_KEY)) || {};
-        return { size: s.size, sound: s.sound, open: s.open, x: s.x, y: s.y, legacyStamps: s.stamps };
+        return { size: s.size, sound: s.sound, open: s.open, x: s.x, y: s.y,
+                 toggleX: s.toggleX, toggleY: s.toggleY, legacyStamps: s.stamps };
       } catch (e) { return {}; }
     }
     function saveSettings() {
       try {
         localStorage.setItem(STORE_KEY, JSON.stringify({
           size: state.size, sound: state.sound, open: state.open, x: state.x, y: state.y,
+          toggleX: state.toggleX, toggleY: state.toggleY,
         }));
       } catch (e) { /* ignore */ }
     }
@@ -220,8 +222,40 @@
       const toggle = document.createElement('button');
       toggle.id = 'lsp-toggle';
       toggle.textContent = '🎨';
-      toggle.title = 'スタンプパレットを開く/閉じる';
+      toggle.title = 'スタンプパレットを開く/閉じる（ドラッグで移動できます）';
+      if (state.toggleX != null) {
+        toggle.style.left = state.toggleX + 'px';
+        toggle.style.top = state.toggleY + 'px';
+        toggle.style.right = 'auto';
+        toggle.style.bottom = 'auto';
+      }
       document.body.appendChild(toggle);
+
+      // 🎨ボタン自体もドラッグで移動できるようにする（チャット欄と重なる対策）。
+      // 少し動かしたときだけドラッグ扱いにして、普通のクリック(開閉)と区別する
+      let tDragging = false, tMoved = false, tsx, tsy, tpx, tpy;
+      toggle.addEventListener('mousedown', e => {
+        tDragging = true; tMoved = false;
+        tsx = e.clientX; tsy = e.clientY;
+        const r = toggle.getBoundingClientRect();
+        tpx = r.left; tpy = r.top;
+        e.preventDefault();
+      });
+      window.addEventListener('mousemove', e => {
+        if (!tDragging) return;
+        if (Math.abs(e.clientX - tsx) + Math.abs(e.clientY - tsy) > 5) tMoved = true;
+        if (!tMoved) return;
+        state.toggleX = Math.min(window.innerWidth - 48, Math.max(0, tpx + e.clientX - tsx));
+        state.toggleY = Math.min(window.innerHeight - 48, Math.max(0, tpy + e.clientY - tsy));
+        toggle.style.left = state.toggleX + 'px';
+        toggle.style.top = state.toggleY + 'px';
+        toggle.style.right = 'auto';
+        toggle.style.bottom = 'auto';
+      });
+      window.addEventListener('mouseup', () => {
+        if (tDragging && tMoved) saveSettings();
+        tDragging = false;
+      });
 
       const panel = document.createElement('div');
       panel.id = 'lsp-panel';
@@ -243,6 +277,7 @@
       document.body.appendChild(panel);
 
       toggle.addEventListener('click', () => {
+        if (tMoved) { tMoved = false; return; } // ドラッグ直後のクリックでは開閉しない
         state.open = !state.open;
         panel.style.display = state.open ? 'block' : 'none';
         saveSettings();
