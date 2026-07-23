@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         リベシティ ovice スタンプパレット
 // @namespace    https://libecity.com/
-// @version      1.6.0
+// @version      1.6.1
 // @description  oviceでスタンプをたくさん使えるパレット。ドラッグで移動、サイズ・効果音の選択、スタンプの追加/削除に対応。
 // @match        https://app.ovice.com/*
 // @match        https://*.ovice.in/*
@@ -14,7 +14,7 @@
 
   // ページのwindow(ovice API)に触るため、pageコンテキストへ本体を注入する
   const source = function () {
-    const PALETTE_VERSION = 'v13';
+    const PALETTE_VERSION = 'v14';
     const STORE_KEY = 'libecity-stamp-palette';
 
     // ── デフォルトのスタンプ（画像URLは公開されているものを利用） ──
@@ -231,20 +231,28 @@
       }
       document.body.appendChild(toggle);
 
-      // 🎨ボタン自体もドラッグで移動できるようにする（チャット欄と重なる対策）。
-      // 少し動かしたときだけドラッグ扱いにして、普通のクリック(開閉)と区別する
-      let tDragging = false, tMoved = false, tsx, tsy, tpx, tpy;
+      const openPanel = () => {
+        state.open = !state.open;
+        panel.style.display = state.open ? 'block' : 'none';
+        saveSettings();
+      };
+
+      // 🎨ボタンはドラッグで移動でき、普通に押せば開閉する。
+      // タップかドラッグかは「離した時点で大きく動いたか」だけで判定するので、
+      // クリック時に手元が少しブレても確実に開閉できる（v14で誤爆修正）
+      let tDown = false, tDragged = false, tsx, tsy, tpx, tpy;
+      const DRAG_THRESHOLD = 8;
       toggle.addEventListener('mousedown', e => {
-        tDragging = true; tMoved = false;
+        tDown = true; tDragged = false;
         tsx = e.clientX; tsy = e.clientY;
         const r = toggle.getBoundingClientRect();
         tpx = r.left; tpy = r.top;
         e.preventDefault();
       });
       window.addEventListener('mousemove', e => {
-        if (!tDragging) return;
-        if (Math.abs(e.clientX - tsx) + Math.abs(e.clientY - tsy) > 5) tMoved = true;
-        if (!tMoved) return;
+        if (!tDown) return;
+        if (!tDragged && Math.abs(e.clientX - tsx) + Math.abs(e.clientY - tsy) > DRAG_THRESHOLD) tDragged = true;
+        if (!tDragged) return;
         state.toggleX = Math.min(window.innerWidth - 48, Math.max(0, tpx + e.clientX - tsx));
         state.toggleY = Math.min(window.innerHeight - 48, Math.max(0, tpy + e.clientY - tsy));
         toggle.style.left = state.toggleX + 'px';
@@ -253,8 +261,10 @@
         toggle.style.bottom = 'auto';
       });
       window.addEventListener('mouseup', () => {
-        if (tDragging && tMoved) saveSettings();
-        tDragging = false;
+        if (!tDown) return;
+        tDown = false;
+        if (tDragged) saveSettings(); // 動かした → 位置を保存（開閉しない）
+        else openPanel();             // ほぼ動いていない → タップ扱いで開閉
       });
 
       const panel = document.createElement('div');
@@ -276,12 +286,6 @@
         </div>`;
       document.body.appendChild(panel);
 
-      toggle.addEventListener('click', () => {
-        if (tMoved) { tMoved = false; return; } // ドラッグ直後のクリックでは開閉しない
-        state.open = !state.open;
-        panel.style.display = state.open ? 'block' : 'none';
-        saveSettings();
-      });
       panel.querySelector('#lsp-close').addEventListener('click', () => {
         state.open = false; panel.style.display = 'none'; saveSettings();
       });
