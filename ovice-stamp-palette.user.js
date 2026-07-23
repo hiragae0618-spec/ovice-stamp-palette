@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         リベシティ ovice スタンプパレット
 // @namespace    https://libecity.com/
-// @version      1.6.1
+// @version      1.6.2
 // @description  oviceでスタンプをたくさん使えるパレット。ドラッグで移動、サイズ・効果音の選択、スタンプの追加/削除に対応。
 // @match        https://app.ovice.com/*
 // @match        https://*.ovice.in/*
@@ -14,7 +14,7 @@
 
   // ページのwindow(ovice API)に触るため、pageコンテキストへ本体を注入する
   const source = function () {
-    const PALETTE_VERSION = 'v14';
+    const PALETTE_VERSION = 'v15';
     const STORE_KEY = 'libecity-stamp-palette';
 
     // ── デフォルトのスタンプ（画像URLは公開されているものを利用） ──
@@ -70,10 +70,31 @@
     ];
 
     // ── 設定はlocalStorage、スタンプ本体は容量の大きいIndexedDBに保存 ──
-    const state = Object.assign(
-      { stamps: null, size: 'S', sound: '', open: true, x: 20, y: 60, toggleX: null, toggleY: null, editing: false },
-      loadSettings()
-    );
+    // ?? で既定値を補う（Object.assignだと保存値のundefinedが既定値を壊し、
+    //   パネル位置がundefinedpxになって画面外へ飛ぶ不具合があったため。v15で修正）
+    const saved = loadSettings();
+    const num = (v, def) => (typeof v === 'number' && isFinite(v) ? v : def);
+    const state = {
+      stamps: null,
+      size: saved.size ?? 'S',
+      sound: saved.sound ?? '',
+      open: saved.open ?? true,
+      x: num(saved.x, 20),
+      y: num(saved.y, 60),
+      toggleX: num(saved.toggleX, null),
+      toggleY: num(saved.toggleY, null),
+      editing: false,
+      legacyStamps: saved.legacyStamps,
+    };
+
+    // 保存済みのパネル位置が画面外なら既定位置に戻す（過去の不具合データの自己修復）
+    if (state.x > window.innerWidth - 60 || state.x < 0 || state.y > window.innerHeight - 60 || state.y < 0) {
+      state.x = 20; state.y = 60;
+    }
+    // 🎨ボタンがoviceの下部バーに隠れる位置なら既定に戻す
+    if (state.toggleY != null && state.toggleY > window.innerHeight - 90) {
+      state.toggleX = null; state.toggleY = null;
+    }
 
     // 旧バージョンの音設定(good/hand等)が残っていたら「なし」に戻す
     if (!SOUNDS.some(s => s.key === state.sound)) state.sound = '';
